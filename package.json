@@ -1,0 +1,17 @@
+{
+  "name": "finsetu",
+  "version": "1.0.0",
+  "description": "FINSETU - Cybersecurity + Fintech + Digital Banking Platform",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "prisma:generate": "cd server && npm run prisma:generate",
+    "prisma:push": "cd server && npm run prisma:push",
+    "prisma:seed": "cd server && npm run prisma:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

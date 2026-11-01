@@ -1,0 +1,441 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+  AUDITOR
+}
+
+enum AccountType {
+  SAVINGS
+  CURRENT
+  SALARY
+}
+
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+  BLOCKED
+}
+
+enum TxType {
+  TRANSFER
+  DEPOSIT
+  WITHDRAWAL
+  LOAN_DISBURSEMENT
+  BILL_PAYMENT
+  REFUND
+}
+
+enum PaymentMethodType {
+  UPI
+  DEBIT_CARD
+  CREDIT_CARD
+  NET_BANKING
+}
+
+enum TxStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  FLAGGED
+  REVERSED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum LoginStatus {
+  SUCCESS
+  FAILED
+  BLOCKED
+}
+
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+  OTHER
+}
+
+enum LoanType {
+  PERSONAL
+  EDUCATION
+  HOME
+  BUSINESS
+}
+
+enum LoanAppStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DISBURSED
+}
+
+enum IncidentType {
+  BRUTE_FORCE
+  PHISHING
+  SUSPICIOUS_DEVICE
+  ACCOUNT_TAKEOVER
+  UNUSUAL_TRANSACTION
+  SESSION_HIJACK
+  API_ABUSE
+}
+
+enum IncidentStatus {
+  DETECTED
+  UNDER_INVESTIGATION
+  MITIGATED
+  RESOLVED
+  DISMISSED
+}
+
+enum SimulationStatus {
+  RUNNING
+  PAUSED
+  STOPPED
+  COMPLETED
+}
+
+enum MitigationStatus {
+  ACTIVE_MITIGATION
+  BLOCKED
+  DEFENDED
+  REQUIRES_ACTION
+}
+
+enum NotificationType {
+  SECURITY
+  TRANSACTION
+  ACCOUNT
+  LOAN
+  SYSTEM
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  fullName           String
+  email              String             @unique
+  phone              String?
+  passwordHash       String
+  transactionPinHash String?
+  role               Role               @default(USER)
+  avatarUrl          String?
+  isTwoFactorEnabled Boolean            @default(false)
+  isLocked           Boolean            @default(false)
+  lockReason         String?
+  failedAttempts     Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  lastLoginAt        DateTime?
+
+  account            Account?
+  sentTransactions   Transaction[]      @relation("SentTransactions")
+  rcvdTransactions   Transaction[]      @relation("ReceivedTransactions")
+  paymentMethods     PaymentMethod[]
+  loginHistories     LoginHistory[]
+  userSessions       UserSession[]
+  devices            Device[]
+  loanApplications   LoanApplication[]
+  securityIncidents  SecurityIncident[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]         @relation("AdminAuditLogs")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Account {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  accountNumber      String             @unique
+  accountType        AccountType        @default(SAVINGS)
+  balance            Decimal            @default(25000.00) @db.Decimal(15, 2)
+  currency           String             @default("INR")
+  status             AccountStatus      @default(ACTIVE)
+  upiId              String             @unique
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outgoingTxs        Transaction[]      @relation("SourceAccount")
+  incomingTxs        Transaction[]      @relation("TargetAccount")
+
+  @@index([accountNumber])
+  @@index([upiId])
+}
+
+model Transaction {
+  id                 String             @id @default(uuid())
+  referenceId        String             @unique
+  sourceAccountId    String?
+  targetAccountId    String?
+  sourceUserId       String?
+  targetUserId       String?
+  amount             Decimal            @db.Decimal(15, 2)
+  currency           String             @default("INR")
+  type               TxType             @default(TRANSFER)
+  paymentMethod      PaymentMethodType  @default(UPI)
+  status             TxStatus           @default(COMPLETED)
+  razorpayOrderId    String?
+  razorpayPaymentId  String?
+  razorpaySignature  String?
+  description        String?
+  isSimulated        Boolean            @default(false)
+  riskScore          Int                @default(10)
+  riskLevel          RiskLevel          @default(LOW)
+  failureReason      String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  sourceAccount      Account?           @relation("SourceAccount", fields: [sourceAccountId], references: [id])
+  targetAccount      Account?           @relation("TargetAccount", fields: [targetAccountId], references: [id])
+  sourceUser         User?              @relation("SentTransactions", fields: [sourceUserId], references: [id])
+  targetUser         User?              @relation("ReceivedTransactions", fields: [targetUserId], references: [id])
+
+  @@index([referenceId])
+  @@index([sourceUserId])
+  @@index([targetUserId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PaymentMethod {
+  id                 String             @id @default(uuid())
+  userId             String
+  type               PaymentMethodType
+  provider           String
+  identifierMasked   String
+  isDefault          Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model LoginHistory {
+  id                 String             @id @default(uuid())
+  userId             String?
+  emailAttempted     String
+  status             LoginStatus
+  failureReason      String?
+  ipAddress          String
+  approximateLocation String            @default("Punjab, India (Reliance Jio Broadband)")
+  userAgent          String?
+  browser            String?
+  os                 String?
+  deviceType         DeviceType         @default(DESKTOP)
+  isSuspicious       Boolean            @default(false)
+  riskFlags          String?
+  sessionTokenId     String?
+  createdAt          DateTime           @default(now())
+
+  user               User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([emailAttempted])
+  @@index([createdAt])
+}
+
+model UserSession {
+  id                 String             @id @default(uuid())
+  userId             String
+  sessionToken       String             @unique
+  deviceId           String?
+  ipAddress          String
+  approximateLocation String            @default("Punjab, India (Reliance Jio Broadband)")
+  browser            String?
+  os                 String?
+  deviceType         DeviceType         @default(DESKTOP)
+  isActive           Boolean            @default(true)
+  lastActiveAt       DateTime           @default(now())
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  revokeReason       String?
+  createdAt          DateTime           @default(now())
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+}
+
+model Device {
+  id                 String             @id @default(uuid())
+  userId             String
+  deviceFingerprint  String
+  deviceName         String
+  deviceType         DeviceType         @default(DESKTOP)
+  os                 String?
+  browser            String?
+  isTrusted          Boolean            @default(true)
+  firstSeenAt        DateTime           @default(now())
+  lastSeenAt         DateTime           @default(now())
+  createdAt          DateTime           @default(now())
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceFingerprint])
+  @@index([userId])
+}
+
+model LoanOffer {
+  id                 String             @id @default(uuid())
+  title              String
+  type               LoanType
+  minAmount          Decimal            @db.Decimal(15, 2)
+  maxAmount          Decimal            @db.Decimal(15, 2)
+  interestRate       Decimal            @db.Decimal(5, 2)
+  tenureMonthsMin    Int
+  tenureMonthsMax    Int
+  processingFeePct   Decimal            @default(1.00) @db.Decimal(4, 2)
+  features           String
+  isActive           Boolean            @default(true)
+  isDemo             Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  applications       LoanApplication[]
+
+  @@index([type])
+}
+
+model LoanApplication {
+  id                 String             @id @default(uuid())
+  userId             String
+  loanOfferId        String
+  amount             Decimal            @db.Decimal(15, 2)
+  tenureMonths       Int
+  monthlyEmi         Decimal            @db.Decimal(15, 2)
+  purpose            String
+  employmentType     String
+  monthlyIncome      Decimal            @db.Decimal(15, 2)
+  status             LoanAppStatus      @default(PENDING)
+  appliedAt          DateTime           @default(now())
+  reviewedAt         DateTime?
+  reviewerNotes      String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loanOffer          LoanOffer          @relation(fields: [loanOfferId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model SecurityIncident {
+  id                 String             @id @default(uuid())
+  userId             String?
+  incidentType       IncidentType
+  severity           RiskLevel
+  status             IncidentStatus     @default(DETECTED)
+  description        String
+  ipAddress          String?
+  targetResource     String?
+  metadata           String?
+  resolvedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([incidentType])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+model AttackSimulation {
+  id                 String             @id @default(uuid())
+  simulationId       String             @unique
+  scenario           IncidentType
+  attackerId         String
+  targetAccount      String
+  targetSystem       String
+  status             SimulationStatus   @default(RUNNING)
+  severity           RiskLevel
+  payloadSummary     String
+  eventsCount        Int                @default(1)
+  startedAt          DateTime           @default(now())
+  endedAt            DateTime?
+  createdAt          DateTime           @default(now())
+
+  impacts            AttackImpact[]
+
+  @@index([simulationId])
+  @@index([scenario])
+}
+
+model AttackImpact {
+  id                 String             @id @default(uuid())
+  simulationId       String
+  affectedSystem     String
+  riskLevel          RiskLevel
+  financialImpactEst Decimal            @default(0.00) @db.Decimal(15, 2)
+  detectionLatencyMs Int                @default(45)
+  automatedResponse  String
+  mitigationStatus   MitigationStatus   @default(DEFENDED)
+  detailedFindings   String
+  createdAt          DateTime           @default(now())
+
+  simulation         AttackSimulation   @relation(fields: [simulationId], references: [simulationId], onDelete: Cascade)
+
+  @@index([simulationId])
+}
+
+model Notification {
+  id                 String             @id @default(uuid())
+  userId             String
+  title              String
+  message            String
+  type               NotificationType   @default(SYSTEM)
+  priority           Priority           @default(MEDIUM)
+  isRead             Boolean            @default(false)
+  readAt             DateTime?
+  actionUrl          String?
+  createdAt          DateTime           @default(now())
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model AuditLog {
+  id                 String             @id @default(uuid())
+  adminId            String?
+  actorEmail         String
+  action             String
+  targetEntity       String
+  targetId           String?
+  ipAddress          String?
+  details            String?
+  createdAt          DateTime           @default(now())
+
+  admin              User?              @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([actorEmail])
+  @@index([action])
+  @@index([createdAt])
+}
